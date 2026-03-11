@@ -921,6 +921,72 @@ export default function App() {
 
   const showToast = (msg, color = "#4ade80") => { setToast({ msg, color }); setTimeout(() => setToast(null), 2500); };
 
+  const buildShareText = () => {
+    let text = "🛒 My Shopping List\n\n";
+    let hasItems = false;
+    for (const [cat, items] of Object.entries(lists)) {
+      const pending = (items || []).filter(i => !i.done);
+      if (pending.length > 0) {
+        hasItems = true;
+        text += `${CATEGORIES[cat].emoji} ${CATEGORIES[cat].label}:\n`;
+        pending.forEach(i => {
+          text += `  • ${i.name}`;
+          if (i.quantity && i.quantity !== "1") text += ` (${i.quantity})`;
+          if (i.estimatedPrice) text += ` - Rs ${i.estimatedPrice}`;
+          text += "\n";
+        });
+        text += "\n";
+      }
+    }
+    if (!hasItems) return null;
+    text += "📱 Sent via Smart Shopper App";
+    return text;
+  };
+
+  const shareViaWhatsApp = () => {
+    const text = buildShareText();
+    if (!text) { showToast("❌ Your list is empty!", "#f87171"); return; }
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank");
+  };
+
+  const shareViaOther = () => {
+    const text = buildShareText();
+    if (!text) { showToast("❌ Your list is empty!", "#f87171"); return; }
+    // Try native share (mobile)
+    if (navigator.share) {
+      navigator.share({ title: "My Shopping List", text }).catch(() => {});
+      return;
+    }
+    // Try modern clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("✅ Copied! Now paste in WhatsApp or SMS 📋"))
+        .catch(() => fallbackCopy(text));
+      return;
+    }
+    // Fallback for all browsers
+    fallbackCopy(text);
+  };
+
+  const fallbackCopy = (text) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "0";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      showToast("✅ Copied! Now paste in WhatsApp or SMS 📋");
+    } catch {
+      showToast("❌ Could not copy. Try WhatsApp button!", "#f87171");
+    }
+    document.body.removeChild(textarea);
+  };
+
   const applyActions = (actions) => {
     setLists(prev => {
       let updated = { ...prev };
@@ -1088,6 +1154,16 @@ export default function App() {
               <button key={key} onClick={() => setFilterCat(key)} style={{ padding: "5px 10px", borderRadius: 14, border: `1px solid ${filterCat === key ? "#4ade80" : "rgba(255,255,255,0.1)"}`, background: filterCat === key ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.04)", color: filterCat === key ? "#4ade80" : "rgba(255,255,255,0.45)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{label}</button>
             ))}
           </div>
+          {totalItems > 0 && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <button onClick={shareViaWhatsApp} style={{ flex: 1, padding: "10px 8px", borderRadius: 11, border: "1px solid rgba(37,211,102,0.3)", background: "rgba(37,211,102,0.1)", color: "#25d366", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                <span style={{ fontSize: 16 }}>📲</span> WhatsApp
+              </button>
+              <button onClick={shareViaOther} style={{ flex: 1, padding: "10px 8px", borderRadius: 11, border: "1px solid rgba(74,222,128,0.3)", background: "rgba(74,222,128,0.1)", color: "#4ade80", fontWeight: 800, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                <span style={{ fontSize: 16 }}>📋</span> Copy / Share
+              </button>
+            </div>
+          )}
           {totalItems > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}><span>Progress</span><span>{Math.round((doneItems / totalItems) * 100)}%</span></div>
