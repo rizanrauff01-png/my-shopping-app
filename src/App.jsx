@@ -698,39 +698,20 @@ function processMessage(text, lists) {
 
   // Recipe lookup
   if (RECIPE_WORDS.some(w => lower.includes(w)) || lower.startsWith("recipe")) {
-    // Find which recipe is being asked about
     const found = Object.entries(RECIPES).find(([key]) => lower.includes(key));
     if (found) {
       const [, recipe] = found;
-      const addActions = recipe.ingredients.map(ing => ({
-        type: "add", category: ing.cat, item: ing.name, quantity: ing.qty, priority: "medium"
-      }));
-      const ingredientList = recipe.ingredients.map(ing => `• ${ing.name} — ${ing.qty}`).join("\n");
-      return {
-        response: `${recipe.emoji} ${recipe.name}\n${recipe.description}\nServes: ${recipe.serves}\n\n📝 Ingredients:\n${ingredientList}\n\n👨‍🍳 Steps:\n${recipe.steps}\n\n✅ All ingredients added to your Groceries list!`,
-        actions: addActions
-      };
+      return { response: null, recipe, actions: [] };
     }
-    // List available recipes
     const recipeList = Object.values(RECIPES).map(r => `${r.emoji} ${r.name}`).join("\n");
-    return {
-      response: `I know these recipes! Just ask "recipe for [name]":\n\n${recipeList}`,
-      actions: []
-    };
+    return { response: `I know these recipes! Just ask "recipe for [name]":\n\n${recipeList}`, actions: [] };
   }
 
   // Direct recipe name (e.g. just "wattalapam" or "chocolate cake")
   const directRecipe = Object.entries(RECIPES).find(([key]) => lower.includes(key));
   if (directRecipe && !lower.includes("add") && !lower.includes("buy") && !lower.includes("remove")) {
     const [, recipe] = directRecipe;
-    const addActions = recipe.ingredients.map(ing => ({
-      type: "add", category: ing.cat, item: ing.name, quantity: ing.qty, priority: "medium"
-    }));
-    const ingredientList = recipe.ingredients.map(ing => `• ${ing.name} — ${ing.qty}`).join("\n");
-    return {
-      response: `${recipe.emoji} ${recipe.name}\n${recipe.description}\nServes: ${recipe.serves}\n\n📝 Ingredients:\n${ingredientList}\n\n👨‍🍳 Steps:\n${recipe.steps}\n\n✅ All ingredients added to your list!`,
-      actions: addActions
-    };
+    return { response: null, recipe, actions: [] };
   }
   // e.g. "price for butter 1200", "butter price 1200", "butter is 1200", "butter costs 1200", "set butter to 1200"
   const priceNumMatch = lower.match(/([\d.]+)/);
@@ -820,6 +801,94 @@ function generateId() { return Date.now().toString(36) + Math.random().toString(
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
+function scaleQty(qty, baseServes, newServes) {
+  if (!qty) return "";
+  const qtyStr = String(qty);
+  if (qtyStr === "to taste" || qtyStr === "as needed" || qtyStr === "mixed" || qtyStr === "a few" || qtyStr === "handful" || qtyStr === "a pinch" || qtyStr === "pinch") return qtyStr;
+  const base = parseInt(String(baseServes)) || 4;
+  const ratio = newServes / base;
+  const match = qtyStr.match(/^([\d./]+)\s*(.*)/);
+  if (!match) return qtyStr;
+  let num;
+  if (match[1].includes("/")) {
+    const parts = match[1].split("/");
+    num = parseFloat(parts[0]) / parseFloat(parts[1]);
+  } else {
+    num = parseFloat(match[1]);
+  }
+  if (isNaN(num)) return qtyStr;
+  const unit = String(match[2] || "").trim();
+  let scaled = num * ratio;
+  if (scaled % 1 !== 0) scaled = Math.round(scaled * 4) / 4;
+  let numStr;
+  if (scaled === 0.25) numStr = "¼";
+  else if (scaled === 0.5) numStr = "½";
+  else if (scaled === 0.75) numStr = "¾";
+  else if (scaled === 1.25) numStr = "1¼";
+  else if (scaled === 1.5) numStr = "1½";
+  else if (scaled === 1.75) numStr = "1¾";
+  else numStr = Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1);
+  return unit ? numStr + " " + unit : numStr;
+}
+
+function RecipeCard({ recipe, onAddToList }) {
+  const baseServes = parseInt(recipe.serves) || 4;
+  const [serves, setServes] = useState(baseServes);
+  const [added, setAdded] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+
+  const handleAdd = () => {
+    const actions = recipe.ingredients.map(ing => ({
+      type: "add", category: ing.cat, item: ing.name,
+      quantity: scaleQty(ing.qty, baseServes, serves), priority: "medium"
+    }));
+    onAddToList(actions);
+    setAdded(true);
+    setTimeout(() => setAdded(false), 3000);
+  };
+
+  return (
+    <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, padding: "12px", fontSize: 13, maxWidth: "82%" }}>
+      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 2 }}>{recipe.emoji} {recipe.name}</div>
+      <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, marginBottom: 10 }}>{recipe.description}</div>
+
+      {/* Serving adjuster */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, background: "rgba(74,222,128,0.08)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(74,222,128,0.2)" }}>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", flex: 1 }}>👥 Servings</span>
+        <button onClick={() => setServes(s => Math.max(1, s - 1))} style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid rgba(74,222,128,0.4)", background: "rgba(74,222,128,0.1)", color: "#4ade80", fontSize: 16, cursor: "pointer", fontWeight: 800, display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+        <span style={{ fontWeight: 800, fontSize: 16, color: "#4ade80", minWidth: 24, textAlign: "center" }}>{serves}</span>
+        <button onClick={() => setServes(s => s + 1)} style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid rgba(74,222,128,0.4)", background: "rgba(74,222,128,0.1)", color: "#4ade80", fontSize: 16, cursor: "pointer", fontWeight: 800, display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+      </div>
+
+      {/* Ingredients */}
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "#4ade80", fontSize: 12 }}>📝 Ingredients</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 12 }}>
+        {recipe.ingredients.map((ing, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+            <span style={{ color: "rgba(255,255,255,0.8)" }}>{ing.name}</span>
+            <span style={{ color: "#4ade80", fontWeight: 700 }}>{scaleQty(ing.qty, baseServes, serves)}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Steps toggle */}
+      <button onClick={() => setShowSteps(s => !s)} style={{ width: "100%", padding: "6px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", borderRadius: 8, color: "rgba(255,255,255,0.6)", fontSize: 12, cursor: "pointer", marginBottom: showSteps ? 8 : 12 }}>
+        {showSteps ? "▲ Hide Steps" : "▼ Show Cooking Steps"}
+      </button>
+      {showSteps && (
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.7, marginBottom: 12, whiteSpace: "pre-wrap" }}>
+          {recipe.steps}
+        </div>
+      )}
+
+      {/* Add to list button */}
+      <button onClick={handleAdd} style={{ width: "100%", padding: "9px", borderRadius: 10, border: "none", background: added ? "rgba(74,222,128,0.2)" : "linear-gradient(135deg,#4ade80,#22c55e)", color: added ? "#4ade80" : "#000", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+        {added ? "✅ Added to list!" : `🛒 Add ${serves} servings to list`}
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [lists, setLists] = useState(() => {
     try {
@@ -881,11 +950,15 @@ export default function App() {
     setMessages(prev => [...prev, { role: "user", text: userText }]);
     setIsTyping(true);
     setTimeout(() => {
-      const { response, actions } = processMessage(userText, lists);
-      if (actions.length > 0) applyActions(actions);
-      setMessages(prev => [...prev, { role: "ai", text: response }]);
+      const result = processMessage(userText, lists);
+      if (result.recipe) {
+        setMessages(prev => [...prev, { role: "ai", recipe: result.recipe }]);
+      } else {
+        if (result.actions && result.actions.length > 0) applyActions(result.actions);
+        setMessages(prev => [...prev, { role: "ai", text: result.response }]);
+        if (result.actions && result.actions.filter(a => a.type === "add").length > 0) showToast("✅ Items added to list!");
+      }
       setIsTyping(false);
-      if (actions.filter(a => a.type === "add").length > 0) showToast("✅ Items added to list!");
     }, 400);
   };
 
@@ -975,7 +1048,11 @@ export default function App() {
             {messages.map((msg, i) => (
               <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", gap: 8, alignItems: "flex-end" }}>
                 {msg.role === "ai" && <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#4ade80,#22c55e)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>🤖</div>}
-                <div style={{ maxWidth: "78%", padding: "10px 13px", fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap", borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: msg.role === "user" ? "linear-gradient(135deg,#4ade80,#22c55e)" : "rgba(255,255,255,0.07)", color: msg.role === "user" ? "#000" : "#f0f0f5", fontWeight: msg.role === "user" ? 700 : 400, border: msg.role === "ai" ? "1px solid rgba(255,255,255,0.08)" : "none" }}>{msg.text}</div>
+                {msg.recipe ? (
+                  <RecipeCard recipe={msg.recipe} onAddToList={(actions) => { applyActions(actions); showToast("✅ Ingredients added to list!"); }} />
+                ) : (
+                  <div style={{ maxWidth: "78%", padding: "10px 13px", fontSize: 13, lineHeight: 1.65, whiteSpace: "pre-wrap", borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px", background: msg.role === "user" ? "linear-gradient(135deg,#4ade80,#22c55e)" : "rgba(255,255,255,0.07)", color: msg.role === "user" ? "#000" : "#f0f0f5", fontWeight: msg.role === "user" ? 700 : 400, border: msg.role === "ai" ? "1px solid rgba(255,255,255,0.08)" : "none" }}>{msg.text || ""}</div>
+                )}
               </div>
             ))}
             {isTyping && (
