@@ -1,5 +1,179 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ─── Offline AI Knowledge Base ───────────────────────────────────────────────
+const ITEM_KNOWLEDGE = {
+  milk:        { desc:"Milk is a dairy liquid rich in calcium & protein 🥛 Great for drinking, cooking and baking. Tip: Full-cream lasts longer than low-fat.", related:["Eggs","Butter","Cheese","Yogurt"] },
+  eggs:        { desc:"Eggs are one of the most versatile foods 🥚 Packed with protein. Good for frying, boiling, baking. Tip: Fresh eggs sink in water, old ones float.", related:["Butter","Milk","Cheese","Bread"] },
+  bread:       { desc:"Bread is a baked staple made from flour & yeast 🍞 Great for sandwiches and toast. Tip: Store in a cool dry place to avoid mold.", related:["Butter","Eggs","Jam","Cheese"] },
+  butter:      { desc:"Butter is a dairy fat used in cooking and baking 🧈 Adds rich flavour. Tip: Unsalted butter is better for baking, salted for spreading.", related:["Milk","Eggs","Flour","Bread"] },
+  rice:        { desc:"Rice is a staple grain eaten across Sri Lanka and Asia 🍚 Easy to cook and very filling. Tip: Wash rice 2-3 times before cooking for fluffier results.", related:["Coconut milk","Curry powder","Lentils","Onion"] },
+  sugar:       { desc:"Sugar is a sweetener used in cooking, baking and drinks 🍬 Tip: Brown sugar has a richer caramel flavour than white sugar.", related:["Flour","Butter","Eggs","Milk"] },
+  flour:       { desc:"Flour is ground wheat used for baking bread, cakes and roti 🌾 Tip: Always sift flour before baking for lighter results.", related:["Sugar","Butter","Eggs","Baking powder"] },
+  salt:        { desc:"Salt is a mineral used to season food 🧂 Enhances flavour in almost every dish. Tip: Add salt to pasta water — it makes a big difference!", related:["Pepper","Oil","Garlic","Onion"] },
+  oil:         { desc:"Cooking oil is used for frying, sautéing and roasting 🫙 Tip: Coconut oil is great for Sri Lankan cooking, olive oil for salads.", related:["Garlic","Onion","Salt","Butter"] },
+  onion:       { desc:"Onions are a base vegetable used in almost every curry and stir-fry 🧅 Tip: Chill onions in the fridge before cutting to avoid crying!", related:["Garlic","Tomato","Ginger","Oil"] },
+  garlic:      { desc:"Garlic adds deep flavour to curries, stir-fries and sauces 🧄 Also has health benefits. Tip: Crush garlic instead of chopping for stronger flavour.", related:["Onion","Ginger","Oil","Curry powder"] },
+  tomato:      { desc:"Tomatoes are juicy vegetables used in curries, salads and sauces 🍅 Rich in vitamin C. Tip: Ripe tomatoes smell sweet at the stem end.", related:["Onion","Garlic","Chili","Oil"] },
+  carrot:      { desc:"Carrots are crunchy orange vegetables rich in vitamin A 🥕 Great in curries, soups and stir-fries. Tip: Don't peel — just scrub, most nutrients are in the skin.", related:["Potato","Onion","Peas","Beans"] },
+  potato:      { desc:"Potatoes are starchy vegetables great for curries, fries and mash 🥔 Very filling. Tip: Store in a dark cool place — light makes them go green.", related:["Onion","Carrot","Oil","Butter"] },
+  chicken:     { desc:"Chicken is a lean white meat used in curries, grills and stir-fries 🍗 High in protein. Tip: Always marinate for at least 30 mins for better flavour.", related:["Curry powder","Coconut milk","Onion","Garlic"] },
+  cheese:      { desc:"Cheese is a dairy product made from milk 🧀 Great for sandwiches, pizza and cooking. Tip: Harder cheeses like cheddar last longer than soft ones.", related:["Milk","Butter","Bread","Eggs"] },
+  yogurt:      { desc:"Yogurt is a creamy fermented dairy food 🥛 Great for breakfast, smoothies and marinades. Tip: Greek yogurt is thicker and higher in protein.", related:["Milk","Honey","Banana","Oats"] },
+  coconut:     { desc:"Coconut is a tropical fruit used widely in Sri Lankan cooking 🥥 The milk, cream and flesh are all used. Tip: Shake a coconut — if you hear lots of liquid it's fresh.", related:["Curry powder","Rice","Lentils","Fish"] },
+  "coconut milk":{ desc:"Coconut milk is pressed from grated coconut flesh 🥥 Essential for Sri Lankan curries. Tip: Shake the can well before opening — the cream separates.", related:["Curry powder","Rice","Chicken","Lentils"] },
+  ginger:      { desc:"Ginger is a spicy root used in curries, teas and marinades 🫚 Great for digestion too. Tip: Freeze ginger and grate it frozen — much easier!", related:["Garlic","Onion","Turmeric","Curry powder"] },
+  turmeric:    { desc:"Turmeric is a bright yellow spice with earthy flavour 💛 Used in almost every Sri Lankan curry. Tip: It stains everything — be careful with clothes!", related:["Curry powder","Ginger","Garlic","Coconut milk"] },
+  "curry powder":{ desc:"Curry powder is a spice blend essential for Sri Lankan cooking 🌶️ Each brand has its own blend. Tip: Toast curry powder briefly in oil before adding other ingredients for deeper flavour.", related:["Coconut milk","Onion","Garlic","Turmeric"] },
+  goraka:      { desc:"Goraka (gamboge) is a dried souring fruit used in Sri Lankan fish curries 🍋 Gives a deep tangy flavour you can't get from tamarind. Tip: Soak pieces in warm water before adding to curry.", related:["Fish","Coconut milk","Curry powder","Chili"] },
+  pandan:      { desc:"Pandan (rampe) is a fragrant leaf used to flavour Sri Lankan rice and curries 🌿 Has a sweet floral aroma. Tip: Tie into a knot before adding to pots so it's easy to remove.", related:["Rice","Coconut milk","Lemongrass","Curry leaves"] },
+  "curry leaves":{ desc:"Curry leaves are aromatic leaves essential in Sri Lankan cooking 🌿 Add a nutty, citrusy flavour. Tip: Fry in hot oil first to release maximum flavour.", related:["Mustard seeds","Oil","Onion","Garlic"] },
+  lentils:     { desc:"Lentils (dal/parippu) are small legumes packed with protein and fibre 🫘 Staple in Sri Lankan dhal curry. Tip: Red lentils cook fastest — no soaking needed.", related:["Coconut milk","Onion","Turmeric","Curry powder"] },
+  banana:      { desc:"Bananas are sweet tropical fruits rich in potassium 🍌 Great as a snack or in smoothies. Tip: Spotted bananas are sweeter — perfect for baking.", related:["Milk","Yogurt","Oats","Honey"] },
+  apple:       { desc:"Apples are crunchy fruits rich in fibre and vitamins 🍎 Great as a snack. Tip: Store in the fridge to keep them crisp longer.", related:["Yogurt","Honey","Oats","Cinnamon"] },
+  honey:       { desc:"Honey is a natural sweetener made by bees 🍯 Great in tea, yogurt and baking. Tip: Real honey crystallises over time — that's normal, just warm it up.", related:["Yogurt","Banana","Oats","Lemon"] },
+  oats:        { desc:"Oats are a whole grain cereal great for a healthy breakfast 🌾 High in fibre. Tip: Rolled oats cook faster than steel-cut oats.", related:["Milk","Banana","Honey","Yogurt"] },
+  soap:        { desc:"Soap is a cleaning product used for washing hands and body 🧼 Tip: Antibacterial soap is good for kitchen use.", related:["Shampoo","Toothpaste","Towel","Sponge"] },
+  shampoo:     { desc:"Shampoo is a liquid soap for washing hair 💆 Tip: Use a small coin-sized amount — less is more!", related:["Conditioner","Soap","Towel"] },
+  detergent:   { desc:"Detergent is a cleaning powder or liquid used for washing clothes 🧺 Tip: Use less than you think — too much detergent leaves residue on clothes.", related:["Washing powder","Fabric softener","Bleach"] },
+  toothpaste:  { desc:"Toothpaste cleans teeth and freshens breath 🦷 Tip: Brush for at least 2 minutes twice a day.", related:["Toothbrush","Mouthwash","Soap"] },
+  fish:        { desc:"Fish is a lean protein rich in omega-3 fatty acids 🐟 Very popular in Sri Lankan cooking. Tip: Fresh fish should smell like the sea, not fishy.", related:["Goraka","Coconut milk","Curry powder","Onion"] },
+  avocado:     { desc:"Avocado is a creamy green fruit rich in healthy fats 🥑 Great on toast or in salads. Tip: Ripe avocados are slightly soft when gently squeezed.", related:["Bread","Eggs","Lemon","Tomato"] },
+  chocolate:   { desc:"Chocolate is a sweet treat made from cacao beans 🍫 Dark chocolate has more health benefits. Tip: Store in a cool dry place — not the fridge as it gets white marks.", related:["Butter","Sugar","Cream","Eggs"] },
+  coffee:      { desc:"Coffee is a popular hot drink made from roasted beans ☕ Has caffeine for energy. Tip: Store coffee beans in an airtight container away from light.", related:["Milk","Sugar","Cream","Tea"] },
+  tea:         { desc:"Tea is the most popular hot drink in Sri Lanka 🍵 Ceylon tea is world famous! Tip: Don't over-brew — 3-4 minutes is perfect for black tea.", related:["Milk","Sugar","Ginger","Honey"] },
+};
+
+const OFFLINE_RESPONSES = {
+  greetings: ["hi","hello","hey","good morning","good afternoon","good evening"],
+  help: ["help","what can you do","how to use","commands"],
+  listShow: ["show my list","what's in my list","show list","my list"],
+  unknown: ["I'm not sure about that 🤔 But I can help you:\n• Add items: \"Add milk, eggs\"\n• Find recipes: \"Recipe for chicken curry\"\n• Ask about items: \"What is goraka?\"\n• Show list: \"Show my list\"", "Hmm, I didn't quite get that 😊 Try:\n• \"Add bread and butter\"\n• \"What is turmeric?\"\n• \"Recipe for hoppers\"\n• Type \"help\" for all commands"],
+};
+
+function offlineProcessMessage(text, lists) {
+  const lower = text.toLowerCase().trim();
+
+  // Greeting
+  if (OFFLINE_RESPONSES.greetings.some(g => lower.startsWith(g))) {
+    return { text: "Hey! 👋 I'm your offline shopping assistant!\n\nI work without internet 📵✅\n\nTry:\n• \"Add milk, eggs, bread\"\n• \"What is goraka?\"\n• \"Recipe for chicken curry\"\n• \"Show my list\"\n• Type \"help\" for all commands", suggestions: null };
+  }
+
+  // Help
+  if (OFFLINE_RESPONSES.help.some(h => lower.includes(h))) {
+    return { text: "Here's what I can do offline 🤖\n\n➕ ADD: \"Add milk and eggs\"\n🔍 WHAT IS: \"What is turmeric?\"\n🍳 RECIPES: \"Recipe for kottu\"\n📋 SHOW: \"Show my list\"\n✅ DONE: \"Milk is done\"\n🗑️ REMOVE: \"Remove sugar\"\n🧹 CLEAR: \"Clear groceries\"", suggestions: null };
+  }
+
+  // Show list
+  if (OFFLINE_RESPONSES.listShow.some(w => lower.includes(w))) {
+    const lines = [];
+    for (const [cat, items] of Object.entries(lists)) {
+      const pending = (items||[]).filter(i => !i.done);
+      if (pending.length) lines.push(`${CATEGORIES[cat].emoji} ${CATEGORIES[cat].label}:\n  ${pending.map(i=>`• ${i.name}`).join("\n  ")}`);
+    }
+    return { text: lines.length ? `Here's your list 🛒\n\n${lines.join("\n\n")}` : "Your list is empty! Tell me what to add 🛒", suggestions: null };
+  }
+
+  // What is X?
+  const whatMatch = lower.match(/^what(?:'s| is)(?: a| an| the)?\s+(.+?)[\?!\.]*$/) ||
+                    lower.match(/^tell me about\s+(.+?)[\?!\.]*$/) ||
+                    lower.match(/^(?:is|are)\s+(.+?)\s+(?:healthy|good|bad|safe)[\?!\.]*$/);
+  if (whatMatch) {
+    const query = whatMatch[1].trim();
+    const key = Object.keys(ITEM_KNOWLEDGE).find(k => query.includes(k) || k.includes(query));
+    if (key) {
+      const info = ITEM_KNOWLEDGE[key];
+      return { text: `${info.desc}\n\nPeople who buy ${key} also get:`, suggestions: info.related };
+    }
+    // Fuzzy match for what is queries
+    const fuzzy = fuzzyMatch(query);
+    if (fuzzy.length) {
+      return { text: `I don't have info on "${query}" 🤔 Did you mean one of these?`, suggestions: fuzzy.map(f=>f.charAt(0).toUpperCase()+f.slice(1)) };
+    }
+  }
+
+  // Recipe lookup
+  const recipeWords = ["recipe","how to make","how to cook","make me","ingredients for"];
+  if (recipeWords.some(w => lower.includes(w)) || lower.startsWith("recipe")) {
+    const found = Object.entries(RECIPES).find(([k]) => lower.includes(k));
+    if (found) return { text: null, recipe: found[1], suggestions: null };
+    const recipeList = Object.values(RECIPES).map(r=>`${r.emoji} ${r.name}`).join("\n");
+    return { text: `Here are my recipes! Say "recipe for [name]" 🍳\n\n${recipeList}`, suggestions: null };
+  }
+
+  // Direct recipe name
+  const directRecipe = Object.entries(RECIPES).find(([k]) => lower.includes(k));
+  if (directRecipe && !lower.includes("add") && !lower.includes("remove")) {
+    return { text: null, recipe: directRecipe[1], suggestions: null };
+  }
+
+  // Mark done
+  const doneWords = ["done","bought","purchased","got","completed","mark"];
+  if (doneWords.some(w => lower.includes(w))) {
+    const actions = [];
+    for (const [cat, items] of Object.entries(lists)) {
+      (items||[]).forEach(item => { if (lower.includes(item.name.toLowerCase())) actions.push({type:"complete",category:cat,item:item.name}); });
+    }
+    if (actions.length) return { text:`✅ Marked as done: ${actions.map(a=>a.item).join(", ")}`, actions, suggestions: null };
+  }
+
+  // Remove
+  const removeWords = ["remove","delete","take out","cancel"];
+  if (removeWords.some(w => lower.includes(w))) {
+    const actions = [];
+    for (const [cat, items] of Object.entries(lists)) {
+      (items||[]).forEach(item => { if (lower.includes(item.name.toLowerCase())) actions.push({type:"remove",category:cat,item:item.name}); });
+    }
+    if (actions.length) return { text:`🗑️ Removed: ${actions.map(a=>a.item).join(", ")}`, actions, suggestions: null };
+  }
+
+  // Clear
+  if (lower.includes("clear") || lower.includes("empty all") || lower.includes("remove all")) {
+    for (const key of Object.keys(CATEGORIES)) {
+      if (lower.includes(key)) return { text:`🧹 Cleared ${CATEGORIES[key].label}!`, actions:[{type:"clear",category:key}], suggestions: null };
+    }
+    return { text:"🧹 Cleared all lists!", actions:[{type:"clear",category:"all"}], suggestions: null };
+  }
+
+  // Add items (default)
+  const addWords = ["add","buy","need","get","purchase","pick up","order"];
+  const isAdding = addWords.some(w => lower.startsWith(w) || lower.includes(" "+w+" "));
+  const rawText = isAdding
+    ? text.replace(new RegExp(`\\b(${addWords.join("|")})\\b`,"gi"),"")
+    : text;
+  const rawItems = rawText.split(/,|&|\band\b/).map(s=>s.replace(/\b(please|pls|some|a few|the|an|a|to my list|to list)\b/gi,"").trim()).filter(s=>s.length>1);
+
+  if (rawItems.length > 0) {
+    const actions = []; const corrected = []; const grouped = {};
+    rawItems.forEach(raw => {
+      const matches = fuzzyMatch(raw);
+      const best = matches[0];
+      const name = best && best !== raw.toLowerCase() ? (corrected.push(`"${raw}"→${best}`), best) : raw;
+      const finalName = name.charAt(0).toUpperCase()+name.slice(1);
+      const cat = Object.keys(SECTION_MAP).find(k=>finalName.toLowerCase().includes(k)) ? (SECTION_MAP[Object.keys(SECTION_MAP).find(k=>finalName.toLowerCase().includes(k))]||"grocery") : "grocery";
+      const mappedCat = ["grocery","food","clothing","household"].includes(cat) ? cat : "grocery";
+      if(!grouped[mappedCat]) grouped[mappedCat]=[];
+      grouped[mappedCat].push(finalName);
+      actions.push({type:"add",category:mappedCat,item:finalName,quantity:"1",priority:"medium"});
+    });
+    if (actions.length) {
+      const lines = Object.entries(grouped).filter(([,its])=>its.length).map(([cat,its])=>`${CATEGORIES[cat].emoji} ${its.join(", ")}`);
+      const correction = corrected.length ? `\n\n✏️ Fixed: ${corrected.join(", ")}` : "";
+      return { text:`✅ Added ${actions.length} item${actions.length>1?"s":""}!\n${lines.join("\n")}${correction}`, actions, suggestions: null };
+    }
+  }
+
+  // Fuzzy suggestions for unknown input
+  const words = text.split(" ").filter(w=>w.length>2);
+  const allMatches = [...new Set(words.flatMap(w=>fuzzyMatch(w)))].slice(0,4);
+  if (allMatches.length) {
+    return { text:`Hmm, not sure what you mean 🤔 Did you mean one of these?`, suggestions: allMatches.map(m=>m.charAt(0).toUpperCase()+m.slice(1)) };
+  }
+
+  // Total unknown
+  const fallback = OFFLINE_RESPONSES.unknown[Math.floor(Math.random()*OFFLINE_RESPONSES.unknown.length)];
+  return { text: fallback, suggestions: ["Show my list","Add groceries","Chicken curry recipe","What is milk?"] };
+}
+
 // ─── Fuzzy Match ─────────────────────────────────────────────────────────────
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -441,151 +615,81 @@ export default function App(){
     return lines.length?lines.join(" | "):"(empty)";
   };
 
-  const sendChat=async()=>{
-    if(!chatInput.trim()||isTyping) return;
-    const userText=chatInput.trim();
-    setChatInput("");
-    setMessages(prev=>[...prev,{role:"user",text:userText}]);
+  const sendChat = async () => {
+    if (!chatInput.trim() || isTyping) return;
+    const userText = chatInput.trim();
+    setChatInput(""); setSuggestions(null);
+    setMessages(prev => [...prev, {role:"user", text:userText}]);
     setIsTyping(true);
 
-    // Quick local recipe check
-    const lower=userText.toLowerCase();
-    const recipeMatch=Object.entries(RECIPES).find(([k])=>lower.includes(k));
-    if(recipeMatch&&(lower.includes("recipe")||lower.includes("make")||lower.includes("cook")||lower.includes("how to")||lower.startsWith(recipeMatch[0]))){
+    // ── Always try offline brain first ──
+    const offline = offlineProcessMessage(userText, lists);
+    const needsAPI = !offline.text && !offline.recipe; // only call API if offline has nothing
+
+    // If offline brain has a confident answer, use it instantly
+    if (offline.recipe) {
       setIsTyping(false);
-      setMessages(prev=>[...prev,{role:"ai",recipe:recipeMatch[1]}]);
+      setMessages(prev => [...prev, {role:"ai", recipe:offline.recipe}]);
       return;
     }
-    if(lower.includes("show all recipes")||lower.includes("list recipes")||lower.includes("all recipes")){
-      const cuisineGroups={};
-      Object.values(RECIPES).forEach(r=>{ if(!cuisineGroups[r.cuisine]) cuisineGroups[r.cuisine]=[]; cuisineGroups[r.cuisine].push(r); });
-      const text=Object.entries(cuisineGroups).map(([c,rs])=>`${CUISINE_EMOJI[c]||""} ${c}:\n${rs.map(r=>`  • ${r.emoji} ${r.name}`).join("\n")}`).join("\n\n");
+    if (offline.actions?.length) applyActions(offline.actions);
+    if (offline.suggestions) setSuggestions(offline.suggestions);
+
+    // For "what is X" and unknown queries, try Claude API to enrich the answer
+    const isWhatIs = userText.toLowerCase().match(/^what|^tell me about|^is .+ healthy/i);
+    const isUnknownItem = !offline.text || offline.text.includes("not sure") || offline.text.includes("didn't quite");
+
+    if (!needsAPI && !isWhatIs && !isUnknownItem) {
+      // Offline answer is good enough — show it directly
       setIsTyping(false);
-      setMessages(prev=>[...prev,{role:"ai",text:`Here are all my recipes!\n\n${text}\n\nJust say "recipe for [name]" to get full details 🍳`}]);
+      setMessages(prev => [...prev, {role:"ai", text:offline.text}]);
       return;
     }
 
-    const systemPrompt = `You are a smart shopping assistant in a mobile app. You help users manage shopping lists, discover recipes, track budgets, and plan meals.
+    // ── Try Claude API for richer answers ──
+    try {
+      abortRef.current = new AbortController();
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: `You are a smart shopping assistant in a mobile app. Current list: ${buildListContext()}. Available recipes: ${Object.keys(RECIPES).join(", ")}.
 
-Current shopping list: ${buildListContext()}
+== WHAT IS X questions ==
+Give a SHORT friendly answer (2-3 sentences). Add 1 buying/cooking tip. End with related items to buy.
+Include: \`\`\`json\n{"suggestions":["item1","item2","item3"]}\`\`\`
 
-AVAILABLE RECIPES: ${Object.entries(RECIPES).map(([k,r])=>`${r.emoji}${r.name}(${r.cuisine})`).join(", ")}
+== ADDING ITEMS ==
+Extract items and respond with: \`\`\`json\n{"actions":[{"type":"add","category":"grocery","item":"Name","quantity":"1","priority":"medium"}]}\`\`\`
 
-== HANDLING "WHAT IS X" / INGREDIENT QUESTIONS ==
-When someone asks "what is X?", "tell me about X", "what does X taste like", "is X healthy?", "difference between X and Y":
-- Give a SHORT, friendly answer (2-3 sentences max). No essays.
-- Include 1 relevant tip (buying, storing, or cooking tip).
-- End with 2–4 related items they might want to buy, as suggestions.
-- Format: answer → tip → "People who buy X also get:" → include {"suggestions":["item1","item2","item3"]} in JSON
-- Example for "what is milk?":
-  "Milk is a nutrient-rich dairy liquid, great for drinking, cooking, and baking 🥛 It's packed with calcium and protein. Tip: Full-cream milk lasts longer and tastes richer than low-fat.
-  People who buy milk often also grab:"
-  + suggestions: ["Eggs","Butter","Cheese","Yogurt"]
-- Example for "what is goraka?":
-  "Goraka (gamboge) is a dried souring fruit used in Sri Lankan fish curries 🍋 It gives that deep tangy flavour you can't get from tamarind alone. Tip: Soak pieces in warm water before adding to curry.
-  Often bought together:"
-  + suggestions: ["Fish","Coconut milk","Curry powder","Chili"]
-- Keep it conversational — like a knowledgeable friend at the supermarket, not a textbook.
+== UNKNOWN INPUT ==
+Be warm and helpful. Offer suggestions: \`\`\`json\n{"suggestions":["option1","option2","option3"]}\`\`\`
 
-== HANDLING UNKNOWN / UNCLEAR INPUT ==
-1. TYPOS/MISSPELLINGS (e.g. "mlk", "chiken", "egss"):
-   - Correct silently, add the right item, mention the correction.
-   - e.g. "Got it! Added Milk 🥛 (looks like a typo — fixed it for you!)"
-
-2. UNKNOWN INGREDIENTS (e.g. "goraka", "pandan", "jak fruit", "rampe"):
-   - These are often Sri Lankan/regional ingredients. Recognize them, categorize correctly as grocery, add them.
-   - Brief note on what they are if useful: "Added Goraka 🍋 — the tangy souring agent used in fish curry!"
-
-3. AMBIGUOUS REQUESTS (e.g. "add stuff for tomorrow", "I need things for the party"):
-   - Ask ONE short clarifying question with 2–3 tappable follow-up suggestions in your reply.
-   - e.g. "What's the occasion? Is it: a birthday party 🎂, a BBQ 🍖, or a dinner for guests 🍽️?"
-   - Include a JSON "suggestions" array: {"suggestions":["Birthday party","BBQ","Dinner for guests"]}
-
-4. OFF-TOPIC QUESTIONS (e.g. "what's the weather?", "tell me a joke", "what time is it?"):
-   - Answer very briefly and warmly, then redirect with a shopping-related suggestion.
-   - e.g. "Ha, I wish I could check the weather! ☀️ But I can help you prep for a rainy day — want me to add some comfort food ingredients?"
-
-5. COMPLETELY UNRECOGNIZED (nothing matches):
-   - Never say "I don't understand" bluntly. Instead show empathy + offer 3 helpful next steps.
-   - Include {"suggestions":["Show my list","Add grocery items","Browse recipes"]}
-
-== RESPONSE FORMAT ==
-- For list actions append: \`\`\`json\n{"actions":[...]}\`\`\`
-- Action types: {"type":"add","category":"grocery|food|clothing|household","item":"Name","quantity":"1","priority":"medium"}
-- {"type":"remove","category":"...","item":"..."} | {"type":"complete",...} | {"type":"setprice",...,"price":150} | {"type":"clear","category":"all|..."}
-- For suggestions: include {"suggestions":["option1","option2","option3"]} in the JSON block alongside actions
-- Keep tone warm, concise, emoji-friendly. Sri Lankan context for prices (Rs).`;
-
-    try{
-      abortRef.current=new AbortController();
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          system:systemPrompt,
-          messages:[{role:"user",content:userText}]
+Keep responses short, friendly, emoji-style. Sri Lankan context (prices in Rs).`,
+          messages: [{role:"user", content:userText}]
         }),
-        signal:abortRef.current.signal
+        signal: abortRef.current.signal
       });
-      const data=await resp.json();
-      let text=data.content?.filter(b=>b.type==="text").map(b=>b.text).join("")||"Sorry, I couldn't process that.";
-      
-      // Extract & apply actions
-      const jsonMatch=text.match(/```json\s*([\s\S]*?)```/);
-      if(jsonMatch){
-        try{
-          const parsed=JSON.parse(jsonMatch[1]);
-          const {actions, suggestions: sugg} = parsed;
-          if(actions?.length){ applyActions(actions); const adds=actions.filter(a=>a.type==="add").length; if(adds>0) showToast(`✅ ${adds} item${adds>1?"s":""} added!`); }
-          if(sugg?.length) setSuggestions(sugg); else setSuggestions(null);
-        }catch{}
-        text=text.replace(/```json[\s\S]*?```/,"").trim();
-      } else {
-        setSuggestions(null);
-      }
-      
-      // Check for recipe mentions
-      const mentionedRecipe=Object.entries(RECIPES).find(([k])=>text.toLowerCase().includes(k));
-      setIsTyping(false);
-      setMessages(prev=>[...prev,{role:"ai",text},{...(mentionedRecipe?{role:"ai",recipe:mentionedRecipe[1]}:{})}].filter(m=>m.role));
-    }catch(err){
-      if(err.name==="AbortError") return;
-      // Offline fallback with fuzzy matching
-      const lower=userText.toLowerCase();
-      let response="";
-      setSuggestions(null);
-      const addMatch=userText.match(/(?:add|buy|need|get)\s+(.+)/i);
-      if(addMatch){
-        const rawItems=addMatch[1].split(/,|and/).map(s=>s.trim()).filter(Boolean);
-        const resolved=[]; const corrected=[];
-        rawItems.forEach(raw=>{
-          const matches=fuzzyMatch(raw);
-          const best=matches[0];
-          if(best&&best!==raw.toLowerCase()){ resolved.push(best); corrected.push(`"${raw}" → ${best}`); }
-          else resolved.push(raw.charAt(0).toUpperCase()+raw.slice(1));
-        });
-        const actions=resolved.map(item=>({type:"add",category:"grocery",item:item.charAt(0).toUpperCase()+item.slice(1),quantity:"1",priority:"medium"}));
-        applyActions(actions);
-        response=corrected.length
-          ? `✅ Added! Fixed ${corrected.length} typo${corrected.length>1?"s":""}: ${corrected.join(", ")}`
-          : `✅ Added ${resolved.length} item${resolved.length>1?"s":""}!`;
-        showToast(response);
-      } else {
-        const words=userText.split(" ").filter(w=>w.length>2);
-        const allMatches=[...new Set(words.flatMap(w=>fuzzyMatch(w)))].slice(0,4);
-        if(allMatches.length){
-          response="I'm offline right now, but did you mean one of these?";
-          setSuggestions(allMatches.map(m=>m.charAt(0).toUpperCase()+m.slice(1)));
-        } else {
-          response="I'm offline 📵 — try: \"Add milk, eggs\" or \"Recipe for chicken curry\"";
-          setSuggestions(["Add groceries","Show my list","Chicken curry recipe","Help"]);
-        }
+      const data = await resp.json();
+      let text = data.content?.filter(b=>b.type==="text").map(b=>b.text).join("") || offline.text;
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[1]);
+          if (parsed.actions?.length) { applyActions(parsed.actions); const adds=parsed.actions.filter(a=>a.type==="add").length; if(adds>0) showToast(`✅ ${adds} item${adds>1?"s":""} added!`); }
+          if (parsed.suggestions?.length) setSuggestions(parsed.suggestions);
+        } catch {}
+        text = text.replace(/```json[\s\S]*?```/, "").trim();
       }
       setIsTyping(false);
-      setMessages(prev=>[...prev,{role:"ai",text:response}]);
-      return;
+      setMessages(prev => [...prev, {role:"ai", text}]);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      // API failed — fall back to offline answer gracefully
+      setIsTyping(false);
+      setMessages(prev => [...prev, {role:"ai", text: offline.text || "I'm working offline right now 📵 Try: \"Add milk, eggs\" or \"What is turmeric?\""}]);
     }
   };
 
