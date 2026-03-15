@@ -1,5 +1,89 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ─── Meal Suggestion Engine ───────────────────────────────────────────────────
+function getCurrentMealTime() {
+  const h = new Date().getHours();
+  if (h >= 5  && h < 11) return { meal:"Breakfast", emoji:"🌅" };
+  if (h >= 11 && h < 15) return { meal:"Lunch",     emoji:"☀️"  };
+  if (h >= 15 && h < 18) return { meal:"Snack",     emoji:"🍵"  };
+  return                          { meal:"Dinner",   emoji:"🌙"  };
+}
+
+function getListIngredients(lists) {
+  return Object.values(lists).flat().map(i => i.name.toLowerCase());
+}
+
+function scoreRecipeForList(recipe, listIngredients) {
+  const recipeIngNames = recipe.ingredients.map(i => i.name.toLowerCase());
+  const matches = recipeIngNames.filter(ing => listIngredients.some(li => li.includes(ing.split(" ")[0]) || ing.includes(li)));
+  return matches.length;
+}
+
+const MEAL_TIME_RECIPES = {
+  Breakfast: ["hoppers","kiri bath","pancakes","overnight oats","smoothie bowl","avocado toast","string hoppers"],
+  Lunch:     ["fried rice","kottu","dhal curry","rice and curry","quinoa salad","sandwich","biryani"],
+  Snack:     ["samosas","pol sambol","pani puri","avocado toast"],
+  Dinner:    ["chicken curry","fish curry","butter chicken","palak paneer","biryani","mutton biryani","pizza","pasta carbonara","fried chicken","kottu","lamprais"],
+};
+
+function suggestMeals(lists, people) {
+  const { meal } = getCurrentMealTime();
+  const listIngs = getListIngredients(lists);
+  const timeRecipes = MEAL_TIME_RECIPES[meal] || MEAL_TIME_RECIPES.Dinner;
+
+  // Score each recipe: +3 for time match, +1 per matching ingredient
+  const scored = Object.entries(RECIPES).map(([key, recipe]) => {
+    const timeScore  = timeRecipes.includes(key) ? 3 : 0;
+    const ingScore   = scoreRecipeForList(recipe, listIngs);
+    const sizeScore  = people && recipe.serves ? (Math.abs(recipe.serves - people) <= 1 ? 2 : 0) : 0;
+    return { key, recipe, score: timeScore + ingScore + sizeScore };
+  });
+
+  // Sort by score, pick top 3, add some variety across cuisines
+  const top = scored.sort((a,b) => b.score - a.score);
+  const picked = []; const usedCuisines = new Set();
+  for (const item of top) {
+    if (picked.length >= 3) break;
+    if (!usedCuisines.has(item.recipe.cuisine) || picked.length === 2) {
+      picked.push(item); usedCuisines.add(item.recipe.cuisine);
+    }
+  }
+  return picked.slice(0,3);
+}
+
+// ─── Meal Poll Component ──────────────────────────────────────────────────────
+function MealPoll({ suggestions, onPick }) {
+  const [voted, setVoted] = useState(null);
+  const { meal, emoji } = getCurrentMealTime();
+  if (!suggestions || suggestions.length === 0) return null;
+  return (
+    <div style={{maxWidth:"82%",display:"flex",flexDirection:"column",gap:8}}>
+      {suggestions.map(({key, recipe, score}) => {
+        if (!recipe) return null;
+        return (
+          <div key={key} onClick={() => { setVoted(key); setTimeout(() => onPick(recipe), 300); }}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",borderRadius:13,border:`2px solid ${voted===key?"#4ade80":"rgba(255,255,255,0.12)"}`,background:voted===key?"rgba(74,222,128,0.15)":"rgba(255,255,255,0.07)",cursor:"pointer"}}>
+            <span style={{fontSize:22,flexShrink:0}}>{recipe.emoji}</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,fontWeight:800,color:voted===key?"#4ade80":"#f0f0f5"}}>{recipe.name}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:2}}>
+                {CUISINE_EMOJI[recipe.cuisine]} {recipe.cuisine} • 👥 serves {recipe.serves}
+              </div>
+              <div style={{fontSize:11,marginTop:3,color:score>2?"#4ade80":"#fb923c"}}>
+                {score>2?"✅ matches your list":"🛒 needs ingredients"}
+              </div>
+            </div>
+            <div style={{fontSize:20,color:voted===key?"#4ade80":"rgba(255,255,255,0.2)"}}>
+              {voted===key?"✓":"›"}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>👆 Tap a meal to see full recipe</div>
+    </div>
+  );
+}
+
 // ─── Offline AI Knowledge Base ───────────────────────────────────────────────
 const ITEM_KNOWLEDGE = {
   milk:        { desc:"Milk is a dairy liquid rich in calcium & protein 🥛 Great for drinking, cooking and baking. Tip: Full-cream lasts longer than low-fat.", related:["Eggs","Butter","Cheese","Yogurt"] },
@@ -52,6 +136,12 @@ const OFFLINE_RESPONSES = {
 
 function offlineProcessMessage(text, lists) {
   const lower = text.toLowerCase().trim();
+
+  // Meal suggestion trigger
+  const mealTriggers = ["what should i cook","what should i make","suggest a meal","suggest something","what can i cook","what can i make","what to cook","what to make","meal suggestion","cook tonight","cook today","cook now","make for dinner","make for lunch","make for breakfast","hungry","what's for dinner","what's for lunch","what's for breakfast"];
+  if (mealTriggers.some(t => lower.includes(t))) {
+    return { text: null, poll: true, suggestions: null };
+  }
 
   // Greeting
   if (OFFLINE_RESPONSES.greetings.some(g => lower.startsWith(g))) {
@@ -615,15 +705,48 @@ export default function App(){
     return lines.length?lines.join(" | "):"(empty)";
   };
 
+  const [people, setPeople] = useState(2);
+  const [showPeoplePrompt, setShowPeoplePrompt] = useState(false);
+
   const sendChat = async () => {
     if (!chatInput.trim() || isTyping) return;
     const userText = chatInput.trim();
     setChatInput(""); setSuggestions(null);
+
+    // Extract people count from message if mentioned
+    const peopleMatch = userText.match(/(\d+)\s*(?:people|person|persons|pax|of us)/i);
+    if (peopleMatch) setPeople(parseInt(peopleMatch[1]));
+
+    // Block meal-time phrases from being treated as add commands
+    const mealTriggerCheck = ["what to cook","what should i cook","what can i cook","suggest a meal","what to make","cook now","for lunch","for dinner","for breakfast","i'm hungry","what's for"];
+    if (mealTriggerCheck.some(t => userText.toLowerCase().includes(t))) {
+      const { meal, emoji } = getCurrentMealTime();
+      const mealSuggestions = suggestMeals(lists, people);
+      setIsTyping(false);
+      setMessages(prev => [...prev,
+        { role:"ai", text:`${emoji} It's ${meal} time! Here are my top picks based on your list & ${people} people:` },
+        { role:"ai", poll: mealSuggestions }
+      ]);
+      return;
+    }
+
     setMessages(prev => [...prev, {role:"user", text:userText}]);
     setIsTyping(true);
 
     // ── Always try offline brain first ──
     const offline = offlineProcessMessage(userText, lists);
+
+    // Meal poll
+    if (offline.poll) {
+      const { meal, emoji } = getCurrentMealTime();
+      const mealSuggestions = suggestMeals(lists, people);
+      setIsTyping(false);
+      setMessages(prev => [...prev,
+        {role:"ai", text:`${emoji} It's ${meal} time! Here are my top picks based on your list & ${people} people:`},
+        {role:"ai", poll: mealSuggestions}
+      ]);
+      return;
+    }
     const needsAPI = !offline.text && !offline.recipe; // only call API if offline has nothing
 
     // If offline brain has a confident answer, use it instantly
